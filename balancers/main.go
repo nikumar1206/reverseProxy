@@ -1,7 +1,6 @@
 package balancers
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 )
@@ -40,9 +39,8 @@ type BackendServer struct {
 func NewBalancer(strat Strategy) Balancer {
 	switch strat {
 	case StrategyBasic:
-		fmt.Println("matched with the basic strat")
 		return BasicBalancer{
-			backends: []BackendServer{},
+			backends: &[]BackendServer{},
 			client:   http.Client{},
 		}
 	default:
