@@ -6,6 +6,7 @@ import (
 	Balancers "load-balancer/balancers"
 	Monitor "load-balancer/monitor"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
@@ -22,20 +23,35 @@ type Config struct {
 func main() {
 	config := Config{
 		LBPort: 8080,
-		Type:   Balancers.StrategyBasic,
+		Type:   Balancers.StrategyRoundRobin,
+		MonitorConfig: Monitor.Config{
+			MaxAttempts: 1,
+			Timeout:     60,
+			Protocol:    Monitor.ProtocolHTTP2,
+		},
 	}
 
 	balancer := Balancers.NewBalancer(config.Type)
 
 	url, err := url.Parse("http://localhost:8000")
-	if err != nil {
-		panic(err)
-	}
+	handleErr(err)
+
+	url_2, err := url.Parse("http://localhost:8001")
+	handleErr(err)
+
 	server := Balancers.BackendServer{IsHealthy: true, HealthCheckEndpoint: url}
-	err = balancer.RegisterServers(server)
-	if err != nil {
-		panic(err)
-	}
+	server2 := Balancers.BackendServer{IsHealthy: true, HealthCheckEndpoint: url_2}
+	err = balancer.RegisterServers(&server, &server2)
+	handleErr(err)
+
+	m := Monitor.NewMonitor(balancer, config.MonitorConfig)
+
+	go func() {
+		for {
+			m.CheckHealth()
+			time.Sleep(1 * time.Second)
+		}
+	}()
 
 	http.HandleFunc("/", handleProxy(balancer))
 	log.Fatal(http.ListenAndServe(createAddr(config.LBPort), nil))
@@ -49,7 +65,7 @@ func handleProxy(b Balancers.Balancer) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
-		fmt.Println("incoming request", r.Host, r.Method, r.RemoteAddr)
+		slog.Info("incoming request", slog.String("host", r.Host), slog.String("method", r.Method), slog.String("remoteAddr", r.RemoteAddr))
 
 		res, err := b.Serve(r)
 
@@ -57,15 +73,21 @@ func handleProxy(b Balancers.Balancer) http.HandlerFunc {
 		w.Header().Set("X-Processing-Time", processingTime)
 
 		if err != nil {
-			fmt.Println("not successful", err.Error())
+			slog.Info("not successful", slog.String("err", err.Error()))
 			w.WriteHeader(502)
 			w.Write([]byte(err.Error()))
 		} else {
 			defer res.Body.Close()
-			fmt.Println("what did we get by firing call", res.StatusCode)
+			slog.Info("what did we get by firing call", slog.Int("statusCode", res.StatusCode))
 			w.Header().Set("Content-Type", res.Header.Get("Content-Type"))
 			w.WriteHeader(res.StatusCode)
 			io.Copy(w, res.Body)
 		}
+	}
+}
+
+func handleErr(err error) {
+	if err != nil {
+		panic(err)
 	}
 }
