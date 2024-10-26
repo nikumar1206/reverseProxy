@@ -10,12 +10,11 @@ type BasicBalancer struct {
 	client   http.Client
 }
 
-func (bb BasicBalancer) GetName() string {
-	return "Basic Balancer"
-}
-
-func (bb BasicBalancer) GetStrategy() Strategy {
-	return StrategyBasic
+func NewBasicBalancer() Balancer {
+	return &BasicBalancer{
+		backends: []*BackendServer{},
+		client:   http.Client{},
+	}
 }
 
 func (bb BasicBalancer) ListServers() []*BackendServer {
@@ -31,13 +30,7 @@ func (bb BasicBalancer) NextServer() *BackendServer {
 	return nil
 }
 
-func (bb BasicBalancer) Serve(req *http.Request) (*http.Response, error) {
-	server := bb.NextServer()
-	if server == nil {
-
-		return nil, fmt.Errorf("no healthy upstream")
-	}
-
+func (bb BasicBalancer) Serve(server *BackendServer, req *http.Request) (*http.Response, error) {
 	return bb.client.Do(updateRequest(req, *server.HealthCheckEndpoint))
 }
 
@@ -54,7 +47,7 @@ func (bb *BasicBalancer) RegisterServers(newServers ...*BackendServer) error {
 	return nil
 }
 
-func (bb BasicBalancer) DeregisterServer(removeServer BackendServer) error {
+func (bb *BasicBalancer) DeregisterServer(removeServer *BackendServer) error {
 	for i, server := range bb.backends {
 		if server.HealthCheckEndpoint.Path == removeServer.HealthCheckEndpoint.Path {
 			bb.backends[i] = bb.backends[len(bb.backends)-1]

@@ -12,7 +12,8 @@ func updateRequest(req *http.Request, newURL url.URL) *http.Request {
 	return req
 }
 
-func filter[S ~[]E, E any](s S, cmp func(a E) bool) S {
+// Filter returns a new slice that satisfies the conditions in the cmp func.
+func Filter[S ~[]E, E any](s S, cmp func(a E) bool) S {
 	var finalArray []E
 	for _, ele := range s {
 		if cmp(ele) {

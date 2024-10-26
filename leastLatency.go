@@ -12,12 +12,11 @@ type LeastLatencyBalancer struct {
 	client   http.Client
 }
 
-func (ll LeastLatencyBalancer) GetName() string {
-	return "LeastLatency Balancer"
-}
-
-func (ll LeastLatencyBalancer) GetStrategy() Strategy {
-	return StrategyLeastLatency
+func NewLeastLatencyBalancer() Balancer {
+	return &BasicBalancer{
+		backends: []*BackendServer{},
+		client:   http.Client{},
+	}
 }
 
 func (ll LeastLatencyBalancer) ListServers() []*BackendServer {
@@ -25,7 +24,7 @@ func (ll LeastLatencyBalancer) ListServers() []*BackendServer {
 }
 
 func (ll *LeastLatencyBalancer) NextServer() *BackendServer {
-	healthyBackends := filter(ll.backends, func(a *BackendServer) bool {
+	healthyBackends := Filter(ll.backends, func(a *BackendServer) bool {
 		return a.IsHealthy
 	})
 	if len(healthyBackends) == 0 {
@@ -41,11 +40,7 @@ func (ll *LeastLatencyBalancer) NextServer() *BackendServer {
 	return fastestBackend
 }
 
-func (ll *LeastLatencyBalancer) Serve(req *http.Request) (*http.Response, error) {
-	server := ll.NextServer()
-	if server == nil {
-		return nil, fmt.Errorf("no healthy upstream")
-	}
+func (ll *LeastLatencyBalancer) Serve(server *BackendServer, req *http.Request) (*http.Response, error) {
 	fmt.Println("firing a request against ", server.HealthCheckEndpoint.String())
 	return ll.client.Do(updateRequest(req, *server.HealthCheckEndpoint))
 }
@@ -63,7 +58,7 @@ func (ll *LeastLatencyBalancer) RegisterServers(newServers ...*BackendServer) er
 	return nil
 }
 
-func (ll LeastLatencyBalancer) DeregisterServer(removeServer BackendServer) error {
+func (ll *LeastLatencyBalancer) DeregisterServer(removeServer *BackendServer) error {
 	for i, serverLatency := range ll.backends {
 		if serverLatency.HealthCheckEndpoint.Path == removeServer.HealthCheckEndpoint.Path {
 			ll.backends[i] = ll.backends[len(ll.backends)-1]

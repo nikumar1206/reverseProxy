@@ -11,12 +11,11 @@ type RoundRobinBalancer struct {
 	runIndex int
 }
 
-func (rr RoundRobinBalancer) GetName() string {
-	return "RoundRobin Balancer"
-}
-
-func (rr RoundRobinBalancer) GetStrategy() Strategy {
-	return StrategyRoundRobin
+func NewRoundRobinBalancer() Balancer {
+	return &RoundRobinBalancer{
+		backends: []*BackendServer{},
+		client:   http.Client{},
+	}
 }
 
 func (rr RoundRobinBalancer) ListServers() []*BackendServer {
@@ -46,11 +45,7 @@ func (rr *RoundRobinBalancer) NextServer() *BackendServer {
 	return nil
 }
 
-func (rr *RoundRobinBalancer) Serve(req *http.Request) (*http.Response, error) {
-	server := rr.NextServer()
-	if server == nil {
-		return nil, fmt.Errorf("no healthy upstream")
-	}
+func (rr *RoundRobinBalancer) Serve(server *BackendServer, req *http.Request) (*http.Response, error) {
 	fmt.Println("firing a request against ", server.HealthCheckEndpoint.String())
 	return rr.client.Do(updateRequest(req, *server.HealthCheckEndpoint))
 }
@@ -68,7 +63,7 @@ func (rr *RoundRobinBalancer) RegisterServers(newServers ...*BackendServer) erro
 	return nil
 }
 
-func (rr RoundRobinBalancer) DeregisterServer(removeServer BackendServer) error {
+func (rr *RoundRobinBalancer) DeregisterServer(removeServer *BackendServer) error {
 	for i, server := range rr.backends {
 		if server.HealthCheckEndpoint.Path == removeServer.HealthCheckEndpoint.Path {
 			rr.backends[i] = rr.backends[len(rr.backends)-1]

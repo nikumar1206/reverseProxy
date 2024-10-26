@@ -1,59 +1,107 @@
+// Package main implements a load balancer with various load-balancing strategies.
 package main
 
 import (
 	"net/http"
 	"net/url"
+	"sync/atomic"
 )
 
+// Strategy represents different load balancing strategies.
 type Strategy int
 
 const (
-	StrategyBasic              Strategy = iota // StrategyBasic just fires request at the first healthy server. lol, all requests go to same server... usually.
-	StrategyRoundRobin                         // TODO
-	StrategyWeightedRoundRobin                 // TODO
-	StrategyLeastConnections                   // TODO
-	StrategyRandom                             // TODO
-	StrategyLeastLatency                       // TODO
-	// ... more can be added
+	// StrategyBasic routes all requests to the first healthy server. This strategy
+	// typically results in all requests being sent to the same server.
+	StrategyBasic Strategy = iota
+
+	// StrategyRoundRobin distributes requests across available servers in a
+	// round-robin fashion. Each server is called in order, looping back to the first.
+	StrategyRoundRobin
+
+	// StrategyWeightedRoundRobin distributes requests based on server weights. Servers
+	// with higher weights receive more requests.
+	StrategyWeightedRoundRobin
+
+	// StrategyLeastConnections sends requests to the server with the fewest active connections.
+	StrategyLeastConnections
+
+	// StrategyRandom picks a server at random for each request.
+	StrategyRandom
+
+	// StrategyLeastLatency routes requests to the server with the lowest latency.
+	StrategyLeastLatency
+
+	// Additional strategies can be added as needed.
 )
 
+// BalancerMetadata stores metadata related to a load balancer strategy.
+type BalancerMetadata struct {
+	BalancerName    string          // Name of the balancer
+	StrategyName    string          // Name of the strategy
+	NewBalancerFunc func() Balancer // Constructor function for creating a new balancer
+}
+
+// StrategyBalancerMap maps each Strategy to its corresponding BalancerMetadata.
+var StrategyBalancerMap = map[Strategy]BalancerMetadata{
+	StrategyBasic: {
+		BalancerName:    "Basic Balancer",
+		StrategyName:    "Basic Strategy",
+		NewBalancerFunc: NewBasicBalancer,
+	},
+	StrategyRoundRobin: {
+		BalancerName:    "RoundRobin Balancer",
+		StrategyName:    "RoundRobin Strategy",
+		NewBalancerFunc: NewRoundRobinBalancer,
+	},
+	StrategyLeastLatency: {
+		BalancerName:    "LeastLatency Balancer",
+		StrategyName:    "LeastLatency Strategy",
+		NewBalancerFunc: NewLeastLatencyBalancer,
+	},
+	StrategyLeastConnections: {
+		BalancerName:    "LeastConnections Balancer",
+		StrategyName:    "LeastConnections Strategy",
+		NewBalancerFunc: NewLeastLatencyBalancer,
+	},
+}
+
+// Balancer defines an interface for a load balancer with operations to manage servers
+// and route requests.
 type Balancer interface {
-	GetName() string                             // tells u the name of the balancer
-	GetStrategy() Strategy                       // tells u the strategy being used, very un-necessary in a 1-1 mapping, likely remove.
-	Serve(*http.Request) (*http.Response, error) // fire the API call to a server
-	NextServer() *BackendServer                  // should tell u the next server to call
-	RegisterServers(...*BackendServer) error     // add backends
-	DeregisterServer(BackendServer) error        // remove backend
+	// ListServers returns a slice of all registered backend servers.
 	ListServers() []*BackendServer
+
+	// NextServer selects and returns the next server for handling a request,
+	// based on the balancer's strategy.
+	NextServer() *BackendServer
+
+	// Serve sends an HTTP request to the specified BackendServer and returns the
+	// response or an error if the request fails.
+	Serve(server *BackendServer, req *http.Request) (*http.Response, error)
+
+	// RegisterServers adds one or more BackendServers to the balancer's pool.
+	RegisterServers(...*BackendServer) error
+
+	// DeregisterServer removes a specific BackendServer from the balancer's pool.
+	DeregisterServer(server *BackendServer) error
 }
 
-// each strategy should map to a different balancer
-// might need a unique identifier for each server
+// BackendServer represents a backend server in the load balancer's pool.
 type BackendServer struct {
-	IsHealthy           bool
+	// IsHealthy indicates if the server is healthy and can handle requests
+	IsHealthy bool
+
+	// HealthCheckEndpoint is the URL endpoint for health checks
 	HealthCheckEndpoint *url.URL
-	latency             int64
-	connections         uint8
+
+	// latency of the server in milliseconds (used by certain strategies)
+	latency int64
+
+	// connections maintained by the server (used by certain strategies)
+	connections atomic.Uint32
 }
 
-func NewBalancer(strat Strategy) Balancer {
-	switch strat {
-	case StrategyBasic:
-		return &BasicBalancer{
-			backends: []*BackendServer{},
-			client:   http.Client{},
-		}
-	case StrategyRoundRobin:
-		return &RoundRobinBalancer{
-			backends: []*BackendServer{},
-			client:   http.Client{},
-		}
-	case StrategyLeastLatency:
-		return &LeastLatencyBalancer{
-			backends: []*BackendServer{},
-			client:   http.Client{},
-		}
-	default:
-		panic("lol")
-	}
+func NewBalancer(s Strategy) Balancer {
+	return StrategyBalancerMap[s].NewBalancerFunc()
 }

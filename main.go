@@ -36,10 +36,13 @@ func main() {
 
 	url_2, err := url.Parse("http://localhost:8001")
 	handleErr(err)
+	url_3, err := url.Parse("http://localhost:8003")
+	handleErr(err)
 
 	server := BackendServer{IsHealthy: true, HealthCheckEndpoint: url}
 	server2 := BackendServer{IsHealthy: true, HealthCheckEndpoint: url_2}
-	err = balancer.RegisterServers(&server, &server2)
+	server3 := BackendServer{IsHealthy: true, HealthCheckEndpoint: url_3}
+	err = balancer.RegisterServers(&server, &server2, &server3)
 	handleErr(err)
 
 	m := NewMonitor(balancer, config.MonitorConfig)
@@ -60,12 +63,18 @@ func createAddr(port int) string {
 }
 
 func handleProxy(b Balancer) http.HandlerFunc {
-
 	return func(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
 		slog.Info("incoming request", slog.String("host", r.Host), slog.String("method", r.Method), slog.String("remoteAddr", r.RemoteAddr))
 
-		res, err := b.Serve(r)
+		server := b.NextServer()
+		if server == nil {
+			err := fmt.Errorf("no healthy upstream")
+			slog.Info(err.Error())
+			w.WriteHeader(502)
+			w.Write([]byte(err.Error()))
+		}
+		res, err := b.Serve(server, r)
 
 		processingTime := time.Since(startTime).String()
 		w.Header().Set("X-Processing-Time", processingTime)
