@@ -1,7 +1,6 @@
-package monitor
+package main
 
 import (
-	Balancers "load-balancer/balancers"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -17,7 +16,7 @@ const (
 	ProtocolHTTP2
 )
 
-type Config struct {
+type MonitorConfig struct {
 	MaxAttempts int      // NumberofAttempts before marking a server as unhealthy
 	Timeout     int      // How long to wait for the Server to respond in a health check in seconds. anywhere from 0-300 seconds
 	Protocol    Protocol // http/1.1 or 2 or something else.
@@ -25,12 +24,12 @@ type Config struct {
 
 // monitors the backends of the provided balancer config
 type Monitor struct {
-	balancer Balancers.Balancer
-	config   Config
+	balancer Balancer
+	config   MonitorConfig
 	client   *http.Client
 }
 
-func NewMonitor(b Balancers.Balancer, config Config) *Monitor {
+func NewMonitor(b Balancer, config MonitorConfig) *Monitor {
 	// is it better to validate the config and fix it, or should we throw error.
 	var transport http.RoundTripper
 	if config.Protocol == ProtocolHTTP2 {
@@ -60,7 +59,7 @@ func (m *Monitor) CheckHealth() {
 	wg.Wait()
 }
 
-func (m *Monitor) Fire(server *Balancers.BackendServer, wg *sync.WaitGroup) {
+func (m *Monitor) Fire(server *BackendServer, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	serverURL := server.HealthCheckEndpoint.String()
@@ -72,13 +71,15 @@ func (m *Monitor) Fire(server *Balancers.BackendServer, wg *sync.WaitGroup) {
 
 	var totalAttempts int
 	var isHealthy bool
-
+	startTime := time.Now()
 	for totalAttempts < m.config.MaxAttempts && !isHealthy {
 		isHealthy = m.validateResponse(m.client.Do(req))
 		totalAttempts++
 	}
-	slog.Info("healthcheck", slog.String("serverID", serverURL), slog.Bool("isHealthy", isHealthy))
+	latency := time.Since(startTime)
+	slog.Info("healthcheck", slog.String("serverID", serverURL), slog.Bool("isHealthy", isHealthy), slog.String("latency", latency.String()), slog.Int("numAttempts", totalAttempts))
 	server.IsHealthy = isHealthy
+	server.latency = latency.Milliseconds()
 }
 
 func (m *Monitor) validateResponse(res *http.Response, err error) bool {

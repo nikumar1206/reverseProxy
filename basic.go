@@ -1,4 +1,4 @@
-package balancers
+package main
 
 import (
 	"fmt"

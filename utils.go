@@ -1,4 +1,4 @@
-package balancers
+package main
 
 import (
 	"net/http"
@@ -10,4 +10,14 @@ func updateRequest(req *http.Request, newURL url.URL) *http.Request {
 	req.URL.Scheme = newURL.Scheme
 	req.RequestURI = ""
 	return req
+}
+
+func filter[S ~[]E, E any](s S, cmp func(a E) bool) S {
+	var finalArray []E
+	for _, ele := range s {
+		if cmp(ele) {
+			finalArray = append(finalArray, ele)
+		}
+	}
+	return finalArray
 }

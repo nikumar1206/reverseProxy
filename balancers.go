@@ -1,4 +1,4 @@
-package balancers
+package main
 
 import (
 	"net/http"
@@ -13,6 +13,7 @@ const (
 	StrategyWeightedRoundRobin                 // TODO
 	StrategyLeastConnections                   // TODO
 	StrategyRandom                             // TODO
+	StrategyLeastLatency                       // TODO
 	// ... more can be added
 )
 
@@ -31,6 +32,8 @@ type Balancer interface {
 type BackendServer struct {
 	IsHealthy           bool
 	HealthCheckEndpoint *url.URL
+	latency             int64
+	connections         uint8
 }
 
 func NewBalancer(strat Strategy) Balancer {
@@ -42,6 +45,11 @@ func NewBalancer(strat Strategy) Balancer {
 		}
 	case StrategyRoundRobin:
 		return &RoundRobinBalancer{
+			backends: []*BackendServer{},
+			client:   http.Client{},
+		}
+	case StrategyLeastLatency:
+		return &LeastLatencyBalancer{
 			backends: []*BackendServer{},
 			client:   http.Client{},
 		}

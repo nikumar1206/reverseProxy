@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	Balancers "load-balancer/balancers"
-	Monitor "load-balancer/monitor"
 	"log"
 	"log/slog"
 	"net/http"
@@ -13,25 +11,25 @@ import (
 )
 
 type Config struct {
-	LBPort         int                //
-	Type           Balancers.Strategy //
-	MaxConnections int                // max connections to handle
-	MaxBodySize    int                // max body size allowed in bytes
-	MonitorConfig  Monitor.Config
+	LBPort         int      //
+	Type           Strategy //
+	MaxConnections int      // max connections to handle
+	MaxBodySize    int      // max body size allowed in bytes
+	MonitorConfig  MonitorConfig
 }
 
 func main() {
 	config := Config{
 		LBPort: 8080,
-		Type:   Balancers.StrategyRoundRobin,
-		MonitorConfig: Monitor.Config{
+		Type:   StrategyLeastLatency,
+		MonitorConfig: MonitorConfig{
 			MaxAttempts: 1,
 			Timeout:     60,
-			Protocol:    Monitor.ProtocolHTTP2,
+			Protocol:    ProtocolHTTP11,
 		},
 	}
 
-	balancer := Balancers.NewBalancer(config.Type)
+	balancer := NewBalancer(config.Type)
 
 	url, err := url.Parse("http://localhost:8000")
 	handleErr(err)
@@ -39,12 +37,12 @@ func main() {
 	url_2, err := url.Parse("http://localhost:8001")
 	handleErr(err)
 
-	server := Balancers.BackendServer{IsHealthy: true, HealthCheckEndpoint: url}
-	server2 := Balancers.BackendServer{IsHealthy: true, HealthCheckEndpoint: url_2}
+	server := BackendServer{IsHealthy: true, HealthCheckEndpoint: url}
+	server2 := BackendServer{IsHealthy: true, HealthCheckEndpoint: url_2}
 	err = balancer.RegisterServers(&server, &server2)
 	handleErr(err)
 
-	m := Monitor.NewMonitor(balancer, config.MonitorConfig)
+	m := NewMonitor(balancer, config.MonitorConfig)
 
 	go func() {
 		for {
@@ -61,7 +59,7 @@ func createAddr(port int) string {
 	return fmt.Sprintf(":%d", port)
 }
 
-func handleProxy(b Balancers.Balancer) http.HandlerFunc {
+func handleProxy(b Balancer) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		startTime := time.Now()
