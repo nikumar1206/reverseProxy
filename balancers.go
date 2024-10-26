@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"sync/atomic"
@@ -62,7 +63,7 @@ var StrategyBalancerMap = map[Strategy]BalancerMetadata{
 	StrategyLeastConnections: {
 		BalancerName:    "LeastConnections Balancer",
 		StrategyName:    "LeastConnections Strategy",
-		NewBalancerFunc: NewLeastLatencyBalancer,
+		NewBalancerFunc: NewLeastConnectionsBalancer,
 	},
 }
 
@@ -102,6 +103,16 @@ type BackendServer struct {
 	connections atomic.Uint32
 }
 
+// String provides a string representation of the BackendServer struct.
+func (s *BackendServer) String() string {
+	return fmt.Sprintf(
+		"IsHealthy: %t, HealthCheckEndpoint: %s, Latency: %d ms, Connections: %d",
+		s.IsHealthy,
+		s.HealthCheckEndpoint,
+		s.latency,
+		s.connections.Load(),
+	)
+}
 func NewBalancer(s Strategy) Balancer {
 	return StrategyBalancerMap[s].NewBalancerFunc()
 }

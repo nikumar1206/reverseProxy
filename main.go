@@ -21,7 +21,7 @@ type Config struct {
 func main() {
 	config := Config{
 		LBPort: 8080,
-		Type:   StrategyLeastLatency,
+		Type:   StrategyLeastConnections,
 		MonitorConfig: MonitorConfig{
 			MaxAttempts: 1,
 			Timeout:     60,
@@ -69,27 +69,48 @@ func handleProxy(b Balancer) http.HandlerFunc {
 
 		server := b.NextServer()
 		if server == nil {
-			err := fmt.Errorf("no healthy upstream")
-			slog.Info(err.Error())
-			w.WriteHeader(502)
-			w.Write([]byte(err.Error()))
+			handleRequestError(fmt.Errorf("no healthy upstream"), w)
+			return
 		}
+		slog.Info(fmt.Sprintf("using server %s", server))
+		server.connections.Add(1)
+		defer server.connections.Add(^uint32(0))
 		res, err := b.Serve(server, r)
 
 		processingTime := time.Since(startTime).String()
 		w.Header().Set("X-Processing-Time", processingTime)
 
 		if err != nil {
-			slog.Info("not successful", slog.String("err", err.Error()))
-			w.WriteHeader(502)
-			w.Write([]byte(err.Error()))
-		} else {
-			defer res.Body.Close()
-			slog.Info("what did we get by firing call", slog.Int("statusCode", res.StatusCode))
-			w.Header().Set("Content-Type", res.Header.Get("Content-Type"))
-			w.WriteHeader(res.StatusCode)
-			io.Copy(w, res.Body)
+			handleRequestError(err, w)
+			return
 		}
+		defer res.Body.Close()
+		slog.Info("Status Code from initial call", slog.Int("statusCode", res.StatusCode))
+		w.Header().Set("Content-Type", res.Header.Get("Content-Type"))
+		w.WriteHeader(res.StatusCode)
+
+		buf := make([]byte, 1024)
+		for {
+			n, err := res.Body.Read(buf)
+			if n > 0 {
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					slog.Error("Error writing to response", slog.Any("error", writeErr))
+					return
+				}
+				// Flush to ensure the data is sent as soon as it's written
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
+			}
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				slog.Error("Error reading from source body", slog.Any("error", err))
+				return
+			}
+		}
+
 	}
 }
 
@@ -97,4 +118,10 @@ func handleErr(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func handleRequestError(err error, w http.ResponseWriter) {
+	slog.Info("not successful", slog.String("err", err.Error()))
+	w.WriteHeader(502)
+	w.Write([]byte(err.Error()))
 }

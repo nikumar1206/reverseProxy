@@ -77,7 +77,7 @@ func (m *Monitor) Fire(server *BackendServer, wg *sync.WaitGroup) {
 		totalAttempts++
 	}
 	latency := time.Since(startTime)
-	slog.Info("healthcheck", slog.String("serverID", serverURL), slog.Bool("isHealthy", isHealthy), slog.String("latency", latency.String()), slog.Int("numAttempts", totalAttempts))
+	slog.Info("healthcheck", slog.String("serverID", serverURL), slog.Bool("isHealthy", isHealthy), slog.String("latency", latency.String()), slog.Int("numAttempts", totalAttempts), slog.Int("activeConnections", int(server.connections.Load())))
 	server.IsHealthy = isHealthy
 	server.latency = latency.Milliseconds()
 }

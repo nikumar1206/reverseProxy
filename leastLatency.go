@@ -41,7 +41,6 @@ func (ll *LeastLatencyBalancer) NextServer() *BackendServer {
 }
 
 func (ll *LeastLatencyBalancer) Serve(server *BackendServer, req *http.Request) (*http.Response, error) {
-	fmt.Println("firing a request against ", server.HealthCheckEndpoint.String())
 	return ll.client.Do(updateRequest(req, *server.HealthCheckEndpoint))
 }
 
